@@ -3,7 +3,7 @@
 
 Name:             byteman
 Version:          2.0.4
-Release:          3%{?dist}
+Release:          5%{?dist}
 Summary:          Java agent-based bytecode injection tool
 Group:            Development/Libraries
 License:          LGPLv2+
@@ -66,6 +66,10 @@ This package contains the API documentation for %{name}.
 # Fix the gid:aid for java_cup
 sed -i "s|net.sf.squirrel-sql.thirdparty-non-maven|java_cup|" agent/pom.xml
 sed -i "s|java-cup|java_cup|" agent/pom.xml
+
+# com.sun:tools dependency has scope "system", which should not used
+# in RHEL.
+%pom_remove_dep com.sun:tools
 
 %build
 %mvn_build
@@ -146,6 +150,12 @@ ln -s %{_javadir}/byteman/byteman.jar $RPM_BUILD_ROOT%{homedir}/lib/byteman.jar
 %doc docs/copyright.txt
 
 %changelog
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 2.0.4-5
+- Mass rebuild 2013-12-27
+
+* Wed Nov 13 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 2.0.4-4
+- Remove system-scoped dependency on tools.jar
+
 * Thu Apr 25 2013 Marek Goldmann <mgoldman@redhat.com> - 2.0.4-3
 - Fixes to the launch scripts
 
