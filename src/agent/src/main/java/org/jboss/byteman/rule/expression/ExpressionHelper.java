@@ -29,7 +29,7 @@ import static org.jboss.byteman.rule.grammar.ParseNode.*;
 import org.jboss.byteman.rule.type.Type;
 import org.jboss.byteman.rule.exception.TypeException;
 import org.jboss.byteman.rule.Rule;
-import org.jboss.byteman.rule.type.TypeGroup;
+import org.omg.CORBA.FieldNameHelper;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -58,6 +58,7 @@ public class ExpressionHelper
         //                   (ARRAY typename)
         //                   (ARRAY expr expr_list)
         //                   (FIELD expr simple_name)
+        //                   (CLASS path simple_name)
         //                   (METH simple_name expr expr_list)
         //                   (NEW name expr_list)
         //                   (BOOLEAN_LITERAL)
@@ -113,6 +114,12 @@ public class ExpressionHelper
                 ParseNode child0 = (ParseNode) exprTree.getChild(0);
                 ParseNode child1 = (ParseNode) exprTree.getChild(1);
                 expr = createFieldExpression(rule, bindings, child0, child1, type);
+            }
+            break;
+            case CLASS:
+            {
+                ParseNode child0 = (ParseNode) exprTree.getChild(0);
+                expr = createClassLiteralExpression(rule, bindings, child0, type);
             }
             break;
             case METH:
@@ -210,6 +217,10 @@ public class ExpressionHelper
                     expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.PARAM_ARRAY_IDX);
                 } else if (text.equals("$@")) {
                     expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.INVOKE_PARAM_ARRAY_IDX);
+                } else if (text.equals("$CLASS")) {
+                    expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_CLASS_IDX);
+                } else if (text.equals("$METHOD")) {
+                    expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_METHOD_IDX);
                 } else {
                     expr = new DollarExpression(rule, type, exprTree, text.substring(1));
                 }
@@ -284,9 +295,26 @@ public class ExpressionHelper
             target = createExpression(rule, bindings, targetTree, Type.UNDEFINED);
             pathList = null;
         }
+
         fieldExpr = new FieldExpression(rule, type, fieldTree, fieldTree.getText(), target, pathList);
 
         return fieldExpr;
+    }
+
+    public static Expression createClassLiteralExpression(Rule rule, Bindings bindings, ParseNode pathTree, Type type)
+            throws TypeException
+    {
+        Expression classLiteralExpr;
+        String[] pathList;
+
+        // this is a class literal -- use the path as the tree for the expression
+        // the path tree must have tag PATH
+
+        pathList = createPathList(pathTree);
+
+        classLiteralExpr = new ClassLiteralExpression(rule, type, pathTree, pathList);
+
+        return classLiteralExpr;
     }
 
     public static Expression createCallExpression(Rule rule, Bindings bindings, ParseNode selectorTree, ParseNode recipientTree, ParseNode argTree, Type type)
@@ -438,6 +466,10 @@ public class ExpressionHelper
                         expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.PARAM_ARRAY_IDX);
                     } else if (child1.getText().equals("@")) {
                         expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.INVOKE_PARAM_ARRAY_IDX);
+                    } else if (child1.getText().equals("CLASS")) {
+                        expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_CLASS_IDX);
+                    } else if (child1.getText().equals("METHOD")) {
+                        expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_METHOD_IDX);
                     } else {
                         expr = new DollarExpression(rule, type, exprTree, child1.getText());
                     }
@@ -674,6 +706,10 @@ public class ExpressionHelper
                     expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.PARAM_ARRAY_IDX);
                 } else if (text.equals("$@")) {
                     expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.INVOKE_PARAM_ARRAY_IDX);
+                } else if (text.equals("$CLASS")) {
+                    expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_CLASS_IDX);
+                } else if (text.equals("$METHOD")) {
+                    expr = new DollarExpression(rule, rule.getTypeGroup().createArray(Type.OBJECT), exprTree, DollarExpression.TRIGGER_METHOD_IDX);
                 } else {
                     expr = new DollarExpression(rule, type, exprTree, text.substring(1));
                 }

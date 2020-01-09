@@ -53,7 +53,7 @@ public class HelperManager
     {
         Class helperClass = rule.getHelperClass();
         if (Transformer.isVerbose()) {
-            System.out.println("HelperManager.install for helper class" + helperClass.getName());
+            System.out.println("HelperManager.install for helper class " + helperClass.getName());
         }
         // synchronize on the lifecycle class to ensure it is not uninstalled
         // while we are deciding whether or not to install it
@@ -62,7 +62,7 @@ public class HelperManager
             details = getDetails(helperClass, true);
             if (details.installCount == 0 && details.activated != null) {
                 if (Transformer.isVerbose()) {
-                    System.out.println("calling activated() for helper class" + helperClass.getName());
+                    System.out.println("calling activated() for helper class " + helperClass.getName());
                 }
                 try {
                     details.activated.invoke(null);
@@ -94,7 +94,7 @@ public class HelperManager
     {
         Class helperClass = rule.getHelperClass();
         if (Transformer.isVerbose()) {
-            System.out.println("HelperManager.uninstall for helper class" + helperClass.getName());
+            System.out.println("HelperManager.uninstall for helper class " + helperClass.getName());
         }
         // synchronize on the lifecycle class to ensure it is not uninstalled
         // while we are deciding whether or not to install it
@@ -108,7 +108,7 @@ public class HelperManager
             details.installCount--;
             if (details.uninstalled != null) {
                 if (Transformer.isVerbose()) {
-                    System.out.println("calling uninstalled(" + rule.getName() + ") for helper class" + helperClass.getName());
+                    System.out.println("calling uninstalled(" + rule.getName() + ") for helper class " + helperClass.getName());
                 }
                 try {
                     if (details.uninstalledTakesRule) {
@@ -136,6 +136,21 @@ public class HelperManager
                 purgeDetails(details);
             }
         }
+    }
+
+    /**
+     * This method exposes a capability of the Byteman agent's
+     * Instrumentation instance while avoding exposing the instance
+     * itself. It returns an estimate of the object size or -1 in case
+     * an agent has not been installed.
+     */
+    public long getObjectSize(Object o)
+    {
+        if (inst == null) {
+            System.out.println("Cannot calculate object size since a Byteman agent has not been installed");
+            return -1;
+        }
+        return this.inst.getObjectSize(o);
     }
 
     // private parts

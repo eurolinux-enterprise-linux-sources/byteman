@@ -610,6 +610,8 @@ public class Rule
                 binding.setType(Type.I);
             } else if (binding.isParamArray() || binding.isInvokeParamArray()) {
                 binding.setType(Type.OBJECT.arrayType());
+            } else if (binding.isTriggerClass() || binding.isTriggerMethod()) {
+                binding.setType(Type.STRING);
             }
         }
     }
@@ -922,5 +924,10 @@ public class Rule
         } catch (Exception e) {
             throw new  ExecuteException("Rule.invokeAccessibleMethod : unexpected error invoking non-public method in rule " + getName(), e);
         }
+    }
+
+    public long getObjectSize(Object o)
+    {
+        return helperManager.getObjectSize(o);
     }
 }

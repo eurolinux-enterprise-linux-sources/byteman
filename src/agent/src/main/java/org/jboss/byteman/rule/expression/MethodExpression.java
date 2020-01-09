@@ -36,6 +36,7 @@ import org.jboss.byteman.rule.grammar.ParseNode;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Iterator;
 import java.util.ArrayList;
@@ -117,7 +118,7 @@ public class MethodExpression extends Expression
             // factor off a typename from the path
             Type rootType = typeGroup.match(pathList);
             if (rootType == null) {
-                throw new TypeException("FieldExpression.typeCheck : invalid path " + getPath(pathList.length) + " to static method " + name + getPos());
+                throw new TypeException("MethodExpression.typeCheck : invalid path " + getPath(pathList.length) + " to static method " + name + getPos());
             }
 
             // find out how many of the path elements are included in the type name
@@ -205,9 +206,41 @@ public class MethodExpression extends Expression
         boolean isStatic = (recipient == null);
 
         int arity = arguments.size();
-        while (clazz != null) {
+        LinkedList<Class<?>> clazzes = new LinkedList<Class<?>>();
+        if (publicOnly) {
+            // we can use getDeclaredMethods on just one class to list all possible candidates
+            clazzes.add(clazz);
+        } else {
+            // we need to iterate over the class and interface hierarchy bottom up
+            while (clazz != null) {
+                clazzes.add(clazz);
+                // collect all direct interfaces in order
+                Class[] ifaces = clazz.getInterfaces();
+                LinkedList<Class<?>> toBeChecked = new LinkedList<Class<?>>();
+                for (int i = 0; i < ifaces.length; i++) {
+                    toBeChecked.addLast(ifaces[i]);
+                }
+                // process each interface in turn, also collecting its parent interfaces for consideration
+                while (!toBeChecked.isEmpty()) {
+                    Class<?> iface = toBeChecked.pop();
+                    // only need to process it if we have not already seen it
+                    if (!clazzes.contains(iface)) {
+                        clazzes.addLast(iface);
+                        Class[] ifaces2 = iface.getInterfaces();
+                        // don't bother to check for repeats here as we check later anyway
+                        for (int j = 0; j < ifaces2.length; j++) {
+                            toBeChecked.addLast(ifaces2[j]);
+                        }
+                    }
+                }
+                // move on to the next class
+                clazz = clazz.getSuperclass();
+            }
+        }
+        // now check for a matching method in each class or interface in order
+        while (!clazzes.isEmpty()) {
+            clazz = clazzes.pop();
             List<Method> candidates = new ArrayList<Method>();
-            Class<?> superClazz = clazz.getSuperclass();
             try {
                 Method[] methods;
                 if (publicOnly) {
@@ -279,12 +312,6 @@ public class MethodExpression extends Expression
 
             } catch (SecurityException e) {
                 // continue in case we can find an implementation
-            }
-
-            if (publicOnly) {
-                clazz = null;
-            } else {
-                clazz = superClazz;
             }
         }
 
@@ -386,7 +413,7 @@ public class MethodExpression extends Expression
 
             if (recipient == null) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, ownerName, method.getName(), getDescriptor());
-            } else if (recipient.getClass().isInterface()) {
+            } else if (method.getDeclaringClass().isInterface()) {
                 mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, ownerName, method.getName(), getDescriptor());
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ownerName, method.getName(), getDescriptor());
@@ -395,12 +422,15 @@ public class MethodExpression extends Expression
             compileContext.addStackCount(expected - extraParams);
 
             // now disable triggering again
-            // this temporarily adds an extra value to the stack -- no need to increment and
-            // then decrement the stack height as we will already have bumped the max last time
+            // this temporarily adds an extra value to the stack -- n.b. we *must* increment and
+            // then decrement the stack height even though we bumped the max before the call. in
+            // some cases the stack may be larger after the method call than before e.g. calling
+            // a static which returns a value or calling a non-static which returns a long/double
 
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jboss/byteman/rule/Rule", "disableTriggersInternal", "()Z");
+            compileContext.addStackCount(1);
             mv.visitInsn(Opcodes.POP);
-
+            compileContext.addStackCount(-1);
         } else {
             // if we are calling a method by reflection then we need to stack the current helper then
             // the recipient or null if there is none and then build an object array on the stack
@@ -466,11 +496,15 @@ public class MethodExpression extends Expression
             }
 
             // now disable triggering again
-            // this temporarily adds an extra value to the stack -- no need to increment and
-            // then decrement the stack height as we will already have bumped the max last time
+            // this temporarily adds an extra value to the stack -- n.b. no need to increment and
+            // then decrement the stack height here because the previous enable call will already have
+            // bumped the max when we had 4 slots on the stack and any return value on the stack will
+            // occupy at most 2 slots
 
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, "org/jboss/byteman/rule/Rule", "disableTriggersInternal", "()Z");
+            compileContext.addStackCount(1);
             mv.visitInsn(Opcodes.POP);
+            compileContext.addStackCount(-1);
         }
 
         // ensure we have only increased the stack by the return value size

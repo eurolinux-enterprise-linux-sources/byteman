@@ -155,6 +155,9 @@ public class RuleTriggerMethodAdapter extends RuleGeneratorAdapter
                 // have to add a local var to store the value so track that requirement
                 callArrayBindings.add(binding);
                 bindInvokeParams = true;
+            } else if (binding.isTriggerClass() || binding.isTriggerMethod()) {
+                callArrayBindings.add(binding);
+                binding.setDescriptor("java.lang.String");
             }
         }
         // we don't have to do this but it makes debugging easier
@@ -220,6 +223,24 @@ public class RuleTriggerMethodAdapter extends RuleGeneratorAdapter
                             return 0;
                         } else {
                             // invoke param array vars precede all remaining types
+                            return -1;
+                        }
+                    } else if (b1.isTriggerClass()) {
+                        if (b2.isParam() || b2.isLocalVar() || b2.isParamCount() || b2.isParamArray() || b2.isInvokeParamArray()) {
+                            // param, local and param count, param array and invoke param array bindings precede trigger class
+                            return 1;
+                        } else if (b2.isTriggerClass()) {
+                            return 0;
+                        } else {
+                            return -1;
+                        }
+                    } else if (b1.isTriggerMethod()) {
+                        if (b2.isParam() || b2.isLocalVar() || b2.isParamCount() || b2.isParamArray() || b2.isInvokeParamArray() || b2.isTriggerClass()) {
+                            // param, local and param count, param array, invoke param array and trigger class bindings precede trigger method
+                            return 1;
+                        } else if (b2.isTriggerMethod()) {
+                            return 0;
+                        } else {
                             return -1;
                         }
                     } else {
@@ -420,6 +441,7 @@ public class RuleTriggerMethodAdapter extends RuleGeneratorAdapter
             } else if (binding.isLocalVar()){
                 int idx = binding.getLocalIndex();
                 loadLocal(idx);
+                // local type may be Object when actual type is more specific but we don't care here
                 box(getLocalType(idx));
             } else if (binding.isParamCount()){
                 int count = argumentTypes.length;
@@ -446,6 +468,12 @@ public class RuleTriggerMethodAdapter extends RuleGeneratorAdapter
                 }
             } else if (binding.isInvokeParamArray()){
                 loadLocal(saveSlot);
+            } else if (binding.isTriggerClass()){
+                String triggerClassName = TypeHelper.internalizeClass(getTriggerClassName());
+                visitLdcInsn(triggerClassName);
+            } else if (binding.isTriggerMethod()){
+                String triggerMethodName = name + TypeHelper.internalizeDescriptor(descriptor);
+                visitLdcInsn(triggerMethodName);
             } else if (binding.isThrowable() | binding.isReturn()){
                 loadLocal(saveSlot);
                 box(saveValueType);
@@ -505,7 +533,16 @@ public class RuleTriggerMethodAdapter extends RuleGeneratorAdapter
                     storeArg(idx);
                 } else if (binding.isLocalVar()) {
                     int idx = binding.getLocalIndex();
-                    unbox(getLocalType(idx));
+                    Type t = getLocalType(idx);
+                    // cannot always trust locals flagged as Object type because we sometimes
+                    // insert that when we see an ALOAD for a local var we do not know about.
+                    // but we can rely on the descriptor in the binding which we derived during
+                    // rule check processing
+                    if (t.getClassName().equals("java.lang.Object")) {
+                        String descriptor = binding.getDescriptor();
+                        t = Type.getType("L" + descriptor.replace('.', '/') + ";");
+                    }
+                    unbox(t);
                     storeLocal(idx);
                 }
             }

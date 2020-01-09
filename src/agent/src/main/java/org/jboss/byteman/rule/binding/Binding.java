@@ -23,6 +23,7 @@
 */
 package org.jboss.byteman.rule.binding;
 
+import org.jboss.byteman.agent.Transformer;
 import org.jboss.byteman.rule.compiler.CompileContext;
 import org.jboss.byteman.rule.expression.DollarExpression;
 import org.jboss.byteman.rule.type.Type;
@@ -86,6 +87,12 @@ public class Binding extends RuleElement
         } else if (name.equals("$@")) {
             // $* refers to the parameters for the trigger method supplied as an Object array
             index = DollarExpression.INVOKE_PARAM_ARRAY_IDX;
+        } else if (name.equals("$CLASS")) {
+            // $* refers to the parameters for the trigger method supplied as an Object array
+            index = DollarExpression.TRIGGER_CLASS_IDX;
+        } else if (name.equals("$METHOD")) {
+            // $* refers to the parameters for the trigger method supplied as an Object array
+            index = DollarExpression.TRIGGER_METHOD_IDX;
         } else if (name.matches("\\$[A-Za-z].*")) {
            // $AAAAA refers  to a local variable in the trigger method
             index = DollarExpression.LOCAL_IDX;
@@ -96,13 +103,16 @@ public class Binding extends RuleElement
         this.callArrayIndex = 0;
 
         this.updated = false;
+        this.doCheckCast = false;
     }
 
     public Type typeCheck(Type expected)
             throws TypeException
     {
         if (alias != null) {
-            return alias.typeCheck(expected);
+            type = alias.typeCheck(expected);
+            doCheckCast = alias.doCheckCast;
+            return type;
         }
         
         // value can be null if this is a rule method parameter
@@ -110,10 +120,21 @@ public class Binding extends RuleElement
             // type check the binding expression, using the bound variable's expected if it is known
 
             if (type.isDefined()) {
-                value.typeCheck(type);
-                // redundant?
-                if (Type.dereference(expected).isDefined() && !expected.isAssignableFrom(type)) {
-                    throw new TypeException("Binding.typecheck : incompatible type binding expression " + type + value.getPos());
+                if (Transformer.disallowDowncast()) {
+                    // compatibility behaviour -- use declared type to help infer expression type
+                    value.typeCheck(type);
+                } else {
+                    // allow downcasts in the binding
+
+                    // typecheck the value first and then check for assignability in either direction
+                    // modulo assigning void
+                    Type valueType = value.typeCheck(expected);
+                    if (!type.isAssignableFrom(valueType)) {
+                        // if this is a downcast we need to check whether downcasts are disabled
+                        if (valueType == Type.VOID || !valueType.isAssignableFrom(type)) {
+                            throw new TypeException("Binding.typecheck : incompatible type for binding expression " + valueType + value.getPos());
+                        }
+                    }
                 }
             }  else {
                 Type valueType = value.typeCheck(expected);
@@ -131,6 +152,11 @@ public class Binding extends RuleElement
     {
         if (isBindVar()) {
             Object result = value.interpret(helper);
+            if (doCheckCast) {
+                if (type.getTargetClass().isInstance(result)) {
+                    throw new ClassCastException("Cannot cast " + result + " to class " + type);
+                }
+            }
             helper.setBinding(getName(), result);
             return result;
         }
@@ -153,6 +179,8 @@ public class Binding extends RuleElement
             // make sure value is boxed if necessary
             if (type.isPrimitive()) {
                 compileBox(Type.boxType(type), mv, compileContext);
+            } else if (doCheckCast) {
+                mv.visitTypeInsn(Opcodes.CHECKCAST, type.getInternalName());
             }
             // compile a setBinding call pops 3 from stack height
             mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.internalName(HelperAdapter.class), "setBinding", "(Ljava/lang/String;Ljava/lang/Object;)V");
@@ -270,6 +298,16 @@ public class Binding extends RuleElement
         return index == DollarExpression.INVOKE_PARAM_ARRAY_IDX;
     }
 
+    public boolean isTriggerClass()
+    {
+        return index == DollarExpression.TRIGGER_CLASS_IDX;
+    }
+
+    public boolean isTriggerMethod()
+    {
+        return index == DollarExpression.TRIGGER_METHOD_IDX;
+    }
+
     public int getIndex()
     {
         return index;
@@ -372,4 +410,5 @@ public class Binding extends RuleElement
     private int localIndex;
     private Binding alias; // aliases $x to $n where x is a method parameter name and n its index in the parameter list
     boolean updated; // records whether this binding occurs on the lhs of an assignment
+    boolean doCheckCast;
 }

@@ -208,7 +208,10 @@ public abstract class RuleElement {
             Label endLabel = new Label();
             // if (object == null)
             mv.visitInsn(Opcodes.DUP);
+            // the above dup bumps the stack height
+            compileContext.addStackCount(1);
             mv.visitJumpInsn(Opcodes.IFNONNULL, elseLabel);
+            compileContext.addStackCount(-1);
             // then string = "null"
             mv.visitInsn(Opcodes.POP);
             mv.visitInsn(Opcodes.ACONST_NULL);
@@ -358,6 +361,10 @@ public abstract class RuleElement {
             throws CompileException
     {
         if (toType == Type.Z) {
+            if (fromType == Type.OBJECT) {
+                fromType = Type.BOOLEAN;
+                mv.visitTypeInsn(Opcodes.CHECKCAST, fromType.getInternalName(false, true));
+            }
             assert fromType == Type.BOOLEAN;
             compileUnbox(fromType, toType, mv, compileContext);
         } else {

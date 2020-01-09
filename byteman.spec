@@ -1,17 +1,15 @@
 %global homedir %{_datadir}/%{name}
 %global bindir %{homedir}/bin
+%global hash 373601b4e608ea622b2fec947824b99cd0edb124
+%global __requires_exclude ^mvn\(.*\)$
 
 Name:             byteman
-Version:          2.0.4
-Release:          5%{?dist}
+Version:          2.1.4.1
+Release:          3%{?dist}
 Summary:          Java agent-based bytecode injection tool
-Group:            Development/Libraries
 License:          LGPLv2+
 URL:              http://www.jboss.org/byteman
-
-# git clone git://github.com/bytemanproject/byteman.git
-# cd byteman/ && git archive --format=tar --prefix=byteman-2.0.4/ 2.0.4 | xz > byteman-2.0.4.tar.xz
-Source0:          byteman-%{version}.tar.xz
+Source0:          https://github.com/bytemanproject/byteman/archive/%{hash}.tar.gz
 
 BuildArch:        noarch
 
@@ -35,11 +33,9 @@ BuildRequires:    testng
 Requires:         jpackage-utils
 Requires:         java-devel
 
-# Bundling
-#BuildRequires:    java_cup = 1:0.11a-12
-#BuildRequires:    objectweb-asm = 0:3.3.1-7
-Provides:         bundled(java_cup) = 1:0.11a-12
-Provides:         bundled(objectweb-asm) = 0:3.3.1-7
+# Bundled at build time
+Provides:         bundled(java_cup) = 1:0.11a-16
+Provides:         bundled(objectweb-asm) = 0:3.3.1-9
 
 %description
 Byteman is a tool which simplifies tracing and testing of Java programs.
@@ -54,14 +50,12 @@ code and reinstall different code while the application continues to execute.
 
 %package javadoc
 Summary:          Javadocs for %{name}
-Group:            Documentation
-Requires:         jpackage-utils
 
 %description javadoc
 This package contains the API documentation for %{name}.
 
 %prep
-%setup -q
+%setup -q -n byteman-%{hash}
 
 # Fix the gid:aid for java_cup
 sed -i "s|net.sf.squirrel-sql.thirdparty-non-maven|java_cup|" agent/pom.xml
@@ -71,13 +65,24 @@ sed -i "s|java-cup|java_cup|" agent/pom.xml
 # in RHEL.
 %pom_remove_dep com.sun:tools
 
+%pom_xpath_inject  "pom:plugin[pom:artifactId = 'maven-javadoc-plugin']/pom:configuration" "<additionalparam>\${doclintparam}</additionalparam>"
+%pom_xpath_inject  "pom:profiles" "<profile>
+        <id>disable-java-8-doclint</id>
+        <activation>
+            <jdk>[1.8,)</jdk>
+        </activation>
+        <properties>
+            <doclintparam>-Xdoclint:none</doclintparam>
+        </properties>
+      </profile>"
+
 %build
 %mvn_build
 
 %install
+%mvn_install
+
 install -d -m 755 $RPM_BUILD_ROOT%{_bindir}
-install -d -m 755 $RPM_BUILD_ROOT%{_javadir}/%{name}
-install -d -m 755 $RPM_BUILD_ROOT%{_mavenpomdir}
 
 install -d -m 755 $RPM_BUILD_ROOT%{homedir}
 install -d -m 755 $RPM_BUILD_ROOT%{homedir}/lib
@@ -101,55 +106,32 @@ done
 
 chmod 755 $RPM_BUILD_ROOT%{_bindir}/*
 
-for m in install sample submit; do
-  # JAR
-  install -pm 644 ${m}/target/%{name}-${m}-%{version}.jar $RPM_BUILD_ROOT%{_javadir}/%{name}/%{name}-${m}.jar
-  # POM
-  install -pm 644 ${m}/pom.xml $RPM_BUILD_ROOT%{_mavenpomdir}/JPP.%{name}-%{name}-${m}.pom
-  # DEPMAP
-  %add_maven_depmap JPP.%{name}-%{name}-${m}.pom %{name}/%{name}-${m}.jar
-done
-
-# Contrib
-for m in bmunit dtest; do
-  # JAR
-  install -pm 644 contrib/${m}/target/%{name}-${m}-%{version}.jar $RPM_BUILD_ROOT%{_javadir}/%{name}/%{name}-${m}.jar
-  # POM
-  install -pm 644 contrib/${m}/pom.xml $RPM_BUILD_ROOT%{_mavenpomdir}/JPP.%{name}-%{name}-${m}.pom
-  # DEPMAP
-  %add_maven_depmap JPP.%{name}-%{name}-${m}.pom %{name}/%{name}-${m}.jar
-done
-
-# JAR
-install -pm 644 agent/target/%{name}-%{version}.jar $RPM_BUILD_ROOT%{_javadir}/%{name}/%{name}.jar
-# POM
-install -pm 644 agent/pom.xml $RPM_BUILD_ROOT%{_mavenpomdir}/JPP.%{name}-%{name}.pom
-# DEPMAP
-%add_maven_depmap JPP.%{name}-%{name}.pom %{name}/%{name}.jar
-
-# APIDOCS
-install -d -m 755 $RPM_BUILD_ROOT%{_javadocdir}/%{name}
-cp -rp target/site/apidocs/* $RPM_BUILD_ROOT%{_javadocdir}/%{name}
-
 for m in bmunit dtest install sample submit; do
   ln -s %{_javadir}/byteman/byteman-${m}.jar $RPM_BUILD_ROOT%{homedir}/lib/byteman-${m}.jar
 done
 
 ln -s %{_javadir}/byteman/byteman.jar $RPM_BUILD_ROOT%{homedir}/lib/byteman.jar
 
-%files
-%{_mavenpomdir}/*
-%{_mavendepmapfragdir}/*
+%files -f .mfiles
+%dir %{_javadir}/%{name}
 %{homedir}/*
 %{_bindir}/*
-%{_javadir}/*
 %doc README docs/ProgrammersGuide.pdf docs/copyright.txt
 
-%files javadoc
-%{_javadocdir}/%{name}
+%files javadoc -f .mfiles-javadoc
 %doc docs/copyright.txt
 
 %changelog
+* Mon Jul 02 2018 Severin Gehwolf <sgehwolf@redhat.com> - 2.1.4.1-3
+- Allow rebuild with JDK-8.
+
+* Wed Jun 06 2018 Severin Gehwolf <sgehwolf@redhat.com> - 2.1.4.1-2
+- Don't filter provides. Update bundled java_cup and
+  asm versions.
+
+* Wed May 30 2018 Severin Gehwolf <sgehwolf@redhat.com> - 2.1.4.1-1
+- Rebase to version 2.1.4.1. Resolves RHBZ#1408898.
+
 * Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 2.0.4-5
 - Mass rebuild 2013-12-27
 
